@@ -229,6 +229,49 @@ if __name__ == "__main__":
         print(f"  - [{r['id']}] Score: {r['score']:.4f} | Tipo: {r['tipo']}")
         print(f"    Testo: {r['testo'][:80]}...")
 
+    # =====================================================================
+    # TODO 5: PROVE CRUD (Cancellazione e Aggiornamento Coordinato)
+    # =====================================================================
+    print("\n" + "=" * 40)
+    print(" TODO 5: PROVE CRUD SUL VECTOR DB")
+    print("=" * 40)
+
+    # --- 1. OPERAZIONE DELETE (Cancellazione di un doc in top-3) ---
+    ID_DA_CANCELLARE = "faq-01"
+    print(f"\n[1/2] Eliminazione del documento: {ID_DA_CANCELLARE}...")
+
+    # Rimuoviamo il documento dall'indice vettoriale
+    collection.delete(ids=[ID_DA_CANCELLARE])
+
+    print("-> Eseguo nuovamente search() per verificare che sia sparito:")
+    risultati_post_delete = search("Quanto dura la garanzia?", k=2)
+    for r in risultati_post_delete:
+        print(f"  - [{r['id']}] Score: {r['score']:.4f} | Testo: {r['testo'][:75]}...")
+
+    # --- 2. OPERAZIONE UPDATE (Aggiornamento coordinato di Testo + Vettore) ---
+    ID_DA_AGGIORNARE = "faq-02"
+    NUOVO_TESTO_FAQ = "È possibile effettuare il ritiro in negozio? Sì, seleziona l'opzione al checkout per ritirare gratuitamente in sede."
+
+    print(f"\n[2/2] Aggiornamento (ri-embed + upsert) per l'ID: {ID_DA_AGGIORNARE}...")
+
+    # Ricalcoliamo il vettore sul nuovo testo (evitiamo il bug del disallineamento)
+    nuovo_vettore_faq = embed([NUOVO_TESTO_FAQ], backend=meta["backend"])[0]
+
+    # Aggiorniamo il record mantenendo lo stesso ID
+    collection.upsert(
+        ids=[ID_DA_AGGIORNARE],
+        metadatas=[{"tipo": "faq"}],
+        documents=[NUOVO_TESTO_FAQ],
+        embeddings=[nuovo_vettore_faq],
+    )
+
+    print(
+        "-> Test di verifica dell'aggiornamento sulla query 'posso ritirare in negozio?':"
+    )
+    risultati_post_update = search("posso ritirare in negozio?", k=1)
+    for r in risultati_post_update:
+        print(f"  - [{r['id']}] Score: {r['score']:.4f} | Testo: {r['testo'][:75]}...")
+
     # Lab 1 (⌨️ da soli): il corpus completo nel DB, poi le tre query qui
     # sopra con la vostra search() fianco a fianco col brute-force di
     # giovedì (ricerca_l20.search): stessi documenti in testa?
