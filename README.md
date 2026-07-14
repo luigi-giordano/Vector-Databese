@@ -69,66 +69,55 @@ python scaffolding/check_lab21.py --solutions # per il docente: verifica solutio
 python scaffolding/benchmark_ann.py           # brute-force vs indice, misurato (~40 s)
 ```
 
-## Le idee da trasmettere (coi numeri misurati, luglio 2026)
+## 🚀 Sviluppo Lab: Vector Database con ChromaDB
 
-1. **Il DB fa la stessa ricerca di giovedì — verificato, non promesso.** Sulle
-   tre query del main, ChromaDB e il brute-force di L20 mettono in testa gli
-   STESSI documenti con gli STESSI score (0.756 / 0.595 / 0.588 sulle
-   rispettive prime posizioni): stessa cosine, stessi vettori. Quello che
-   cambia non è il risultato: è chi fa il lavoro, e come scala.
-2. **L'indice resta piatto dove il brute-force cresce dritto.** Stessi
-   vettori sintetici di L20 (1536 dim, float32), una query: a 5k vettori
-   brute 5.9 ms vs Chroma 1.9 ms; a 50k **brute 152.5 ms vs Chroma 2.6 ms**.
-   In cambio l'indice si PAGA alla scrittura: 1.3 s per indicizzare 5k,
-   **37.5 s per 50k**. Scrivi una volta, interroghi per sempre. (In slide:
-   tempi secchi, il benchmark non si nomina.)
-3. **Gli embedding si passano espliciti, sempre.** Chroma ha un embedder di
-   default (MiniLM, 384 dim) che NON è quello del corpus (1536): mai
-   lasciarglielo usare — upsert e query viaggiano con embedding calcolati da
-   noi, col backend scritto in `corpus_meta.json`. È la regola di L20, lato
-   database.
-4. **Il DB parla in distanze, noi in score.** `collection.query` restituisce
-   `distances` (cosine distance): lo score di L20 è `1 - distanza`. Fascia
-   di controllo già nota: fuori dominio (carbonara) resta a **0.196**, la
-   query facile a **0.756** — le fasce di giovedì valgono ancora.
-5. **Il filtro cambia la domanda, non la query.** "problemi con il motore
-   della scrivania" senza filtro: tic-02 / rec-04 / faq-06 (0.588 / 0.574 /
-   0.557). Con `tipo="faq"`: solo FAQ (0.557 / 0.538 / 0.483); con
-   `tipo="recensione"`: solo recensioni. Stessa semantica, recinti diversi —
-   e il recinto lo decidono i metadata caricati con l'upsert.
-6. **Update = ri-embed + upsert, stesso id.** Il DB NON si accorge dei testi
-   cambiati: cambiare il testo di faq-02 (da spedizione a ritiro in negozio)
-   senza ricalcolare l'embedding lascerebbe la ricerca sul vecchio
-   significato. Fatto bene: faq-02 esce dalla query "spedizione" e compare
-   su "posso ritirare in negozio?" a **0.718**. Testo ed embedding li
-   sincronizziamo NOI.
-7. **Tre famiglie, una scelta di contesto.** ChromaDB: embedded, zero
-   infrastruttura, perfetto per prototipi e corsi. pgvector: il Postgres che
-   già conosci con un tipo in più — ricerca = `ORDER BY <=> LIMIT k`, filtro
-   = `WHERE`, e le JOIN coi tuoi dati (demo docente: stessi risultati,
-   0.588 / 0.574 / 0.557). Pinecone: managed, niente da gestire, si paga a
-   consumo. I concetti (collection, vettori, metadata, ANN) sono gli stessi
-   ovunque: si impara una volta, si sceglie per contesto.
+Questo modulo implementa l'indicizzazione e la ricerca semantica (vettoriale) del corpus di documenti **Lumen**, integrando un database vettoriale persistente (`ChromaDB`) con logiche di filtraggio avanzate e confrontando i risultati con l'approccio brute-force.
 
-## Percorso in aula (le slide sono la regia: ogni switch ha la sua slide)
+---
 
-1. **Brief/teoria (📊, 35')**: da brute-force a indice (i numeri del punto 2),
-   modello dati del vector DB, le tre famiglie, la regola degli embedding
-   espliciti.
-2. **Quick start (🎤, 15')**: `apri_collection` + primi 3 doc + query di
-   prova col docente (TODO 1); fatto quando rilanciando lo script i doc sono
-   ancora lì.
-3. **Lab 1 (⌨️, 75')**: `carica_corpus_nel_db` e `search` da soli (TODO 2-3);
-   fatto quando `count()` dice 48 (e resta 48 al rilancio) e le tre query del
-   main danno gli stessi documenti in testa del brute-force, fianco a fianco.
-4. **☕ Pausa (15')**.
-5. **Lab 2 (⌨️, 60')**: `search_filtrata` (TODO 4) e le prove CRUD nel main
-   (TODO 5); fatto quando la stessa query cambia faccia col filtro, il doc
-   cancellato sparisce e quello aggiornato cambia query di appartenenza.
-6. **Demo pgvector (🎤, 15')**: solo docente, materiale fuori da `scripts/`.
-7. **Criteri di scelta + ultimo blocco (📊⌨️, 25')**: la tabella di scelta a
-   slide, poi due strade a scelta del docente — Q&A aperto (anche sulle
-   lezioni passate) oppure l'esercizio extra "il 49° documento" (TODO 6:
-   una voce nuova del corpus scritta dallo studente, embed + upsert con id
-   nuovo; riferimento in `solutions/`). Chiude il wrap-up col ponte a L22
-   (documenti lunghi → chunking).
+### 📋 Architettura e Funzionalità
+
+L'applicazione è suddivisa in quattro blocchi logici principali:
+
+1. **TODO 1: Inizializzazione della Collection (`apri_collection`)**
+   * Configurazione e apertura di un client persistente ChromaDB su disco.
+   * Creazione/Riuso della collection denominata `"lumen"`.
+   * Configurazione della metrica di similarità impostata su **Distanza di Coseno** (`cosine`).
+
+2. **TODO 2: Caricamento Massivo del Dataset (`carica_corpus_nel_db`)**
+   * *Bulk-load* dei 48 documenti originali estratti dal file `.jsonl`.
+   * Associazione atomica di ogni documento al rispettivo vettore numerico pre-calcolato (file `.npz`).
+   * Inserimento strutturato dei metadati associati (`tipo` di documento: *FAQ* o *Ticket*).
+   * Gestione nativa dei duplicati tramite operazioni di `upsert`.
+
+3. **TODO 3: Ricerca Vettoriale Semantica (`search`)**
+   * Conversione *on-the-fly* della query testuale in un embedding vettoriale tramite modello `OpenAI`.
+   * Interrogazione della collection per recuperare i $k$ documenti semanticamente più vicini.
+   * Normalizzazione dei risultati: conversione delle distanze grezze del DB in score di similitudine espliciti:
+     $$\text{score} = 1 - \text{distanza}$$
+
+4. **TODO 4: Ricerca Semantica Filtrata (`search_filtrata`)**
+   * Stessa logica di recupero semantico della ricerca standard.
+   * Applicazione di un filtro di segmentazione deterministico a livello database tramite parametro `where={"tipo": tipo}`.
+
+---
+
+### 🧪 Esercizio Extra: Indicizzazione Dinamica
+
+Il sistema supporta l'inserimento e l'indicizzazione in tempo reale di nuove informazioni (es. un ipotetico **49° documento**) senza la necessità di rigenerare l'intero dataset statico:
+* Generazione dell'embedding della nuova stringa a runtime.
+* Aggiornamento incrementale dell'indice vettoriale persistente tramite `.upsert()`.
+* Validazione immediata della ricercabilità e del rispetto dei vincoli di filtraggio sul metadato.
+
+---
+
+### 💻 Modalità di Esecuzione
+
+Assicurati che l'ambiente virtuale (`.venv`) sia attivo e di trovarti nel percorso corretto prima di lanciare lo script:
+
+```bash
+# Spostarsi nella cartella di lavoro
+cd scripts/working
+
+# Eseguire lo script e visualizzare i test a terminale
+python vectorstore.py
